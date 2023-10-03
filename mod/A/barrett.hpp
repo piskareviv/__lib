@@ -19,6 +19,51 @@ using u32x8 = u32 __attribute__((vector_size(32)));
 using u64x4 = u64 __attribute__((vector_size(32)));
 
 #define RC(type, val) reinterpret_cast<type>(val)
+#define INL inline __attribute__((always_inline))
+
+namespace simd {
+    u32x4 load_u32x4(u32* ptr) {
+        return RC(u32x4, _mm_load_si128((i128*)ptr));
+    }
+    u32x8 load_u32x8(u32* ptr) {
+        return RC(u32x8, _mm256_load_si256((i256*)ptr));
+    }
+    u32x8 loadu_u32x8(u32* ptr) {
+        return RC(u32x8, _mm256_loadu_si256((i256*)ptr));
+    }
+    void store_u32x8(u32* ptr, u32x8 val) {
+        _mm256_store_si256((i256*)ptr, RC(i256, val));
+    }
+    void storeu_u32x8(u32* ptr, u32x8 val) {
+        _mm256_storeu_si256((i256*)ptr, RC(i256, val));
+    }
+
+    u32x8 set1_u32x8(u32 val) {
+        return RC(u32x8, _mm256_set1_epi32(val));
+    }
+    u64x4 set1_u64x4(u64 val) {
+        return RC(u64x4, _mm256_set1_epi64x(val));
+    }
+
+    template <int imm8>
+    u32x8 shuffle_u32x8(u32x8 val) {
+        return RC(u32x8, _mm256_shuffle_epi32(RC(i256, val), imm8));
+    }
+    u32x8 permute_u32x8(u32x8 val, u32x8 p) {
+        return RC(u32x8, _mm256_permutevar8x32_epi32(RC(i256, val), RC(i256, p)));
+    }
+
+    template <int imm8>
+    u32x8 blend_u32x8(u32x8 a, u32x8 b) {
+        return RC(u32x8, _mm256_blend_epi32(RC(i256, a), RC(i256, b), imm8));
+    }
+    u32x8 blendv_u32x8(u32x8 a, u32x8 b, u32x8 mask) {
+        return RC(u32x8, _mm256_blendv_epi8(RC(i256, a), RC(i256, b), RC(i256, mask)));
+    }
+
+};  // namespace simd
+
+using namespace simd;
 
 // works for 998'244'353, not sure about other numbers
 struct Barrett {
@@ -53,7 +98,7 @@ struct Barrett {
         return std::min<u32>(val, val - mod2);
     }
 
-    u32 shrink_4(u32 val) {
+    u32 shrink_21(u32 val) {
         return shrink(shrink_2(val));
     }
 
@@ -97,9 +142,23 @@ struct Barrett_simd {
     Barrett_simd(u32 m) : bt(m) {
         s = bt.s;
         s_1 = bt.s_1;
-        v_q = RC(u32x8, _mm256_set1_epi32(bt.q));
-        v_mod = RC(u32x8, _mm256_set1_epi32(bt.mod));
-        v_mod2 = RC(u32x8, _mm256_set1_epi32(bt.mod2));
+        v_q = set1_u32x8(bt.q);
+        v_mod = set1_u32x8(bt.mod);
+        v_mod2 = set1_u32x8(bt.mod2);
+    }
+
+    u32x8 shrink(u32x8 vec) {
+        i256 res = _mm256_min_epu32(RC(i256, vec), _mm256_sub_epi32(RC(i256, vec), RC(i256, v_mod)));
+        return RC(u32x8, res);
+    }
+
+    u32x8 shrink_2(u32x8 vec) {
+        i256 res = _mm256_min_epu32(RC(i256, vec), _mm256_sub_epi32(RC(i256, vec), RC(i256, v_mod2)));
+        return RC(u32x8, res);
+    }
+
+    u32x8 shrink_21(u32x8 vec) {
+        return shrink(shrink_2(vec));
     }
 
     // from [0, 2 * mod * mod) to [0, 2 * mod)
@@ -133,5 +192,32 @@ struct Barrett_simd {
         i256 res = _mm256_blend_epi32(x0246, _mm256_shuffle_epi32(x1357, shuflle_mask), 0b10'10'10'10);
         res = _mm256_min_epu32(res, _mm256_sub_epi32(res, RC(i256, v_mod2)));
         return RC(u32x8, res);
+    }
+
+    // product in [0, 2 * mod * mod), result in [0, 2 * mod)
+    u32x8 mul_mod_22(u32x8 a, u32x8 b) {
+        const u32 shuflle_mask = 0b10'11'00'01;
+        i256 x0246 = _mm256_mul_epu32(RC(i256, a), RC(i256, b));
+        i256 x1357 = _mm256_mul_epu32(_mm256_shuffle_epi32(RC(i256, a), shuflle_mask), _mm256_shuffle_epi32(RC(i256, b), shuflle_mask));
+        x0246 = RC(i256, mod_22(RC(u64x4, x0246)));
+        x1357 = RC(i256, mod_22(RC(u64x4, x1357)));
+        i256 res = _mm256_blend_epi32(x0246, _mm256_shuffle_epi32(x1357, shuflle_mask), 0b10'10'10'10);
+        return RC(u32x8, res);
+    }
+
+    // product in [0, 2 * mod * mod), result in [0, 2 * mod)
+    u64x4 mul_mod_22(u64x4 a, u64x4 b) {
+        i256 x0246 = _mm256_mul_epu32(RC(i256, a), RC(i256, b));
+        i256 res = RC(i256, mod_22(RC(u64x4, x0246)));
+        return RC(u64x4, res);
+    }
+
+    // product in [0, 4 * mod * mod), result in [0, 2 * mod)
+    u64x4 mul_mod_42(u64x4 a, u64x4 b) {
+        const u32 shuflle_mask = 0b10'11'00'01;
+        i256 x0246 = _mm256_mul_epu32(RC(i256, a), RC(i256, b));
+        i256 res = RC(i256, mod_44(RC(u64x4, x0246)));
+        res = _mm256_min_epu32(res, _mm256_sub_epi32(res, RC(i256, v_mod2)));
+        return RC(u64x4, res);
     }
 };

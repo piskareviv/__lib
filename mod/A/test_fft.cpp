@@ -1,3 +1,4 @@
+// #pragma GCC optimize("O3")
 #include <stdint.h>
 
 #include <algorithm>
@@ -31,9 +32,16 @@ int32_t main() {
         test(rand_vec(n, 10), rand_vec(m, 10));
     }
 
-    for (int i = 0; i < 1e5; i++) {
+    for (int i = 1; i < 1e4; i++) {
         int n = exp2(rnd() % int(1e9) / 1e9 * 10);
         int m = exp2(rnd() % int(1e9) / 1e9 * 10);
-        test(rand_vec(n, 10), rand_vec(m, 10));
+        test(rand_vec(n, i + 1), rand_vec(m, i + 1));
+    }
+    for (int i = 0; i < 1; i++) {
+        // int n = exp2(rnd() % int(1e9) / 1e9 * 15);
+        // int m = exp2(rnd() % int(1e9) / 1e9 * 20);
+        int n = 1 << 15;
+        int m = 1 << 15;
+        test(rand_vec(n, 1e9), rand_vec(m, i + 1e9));
     }
 }

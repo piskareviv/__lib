@@ -16,7 +16,7 @@ int32_t main() {
 
     std::mt19937 rnd;
     float min = 1e9;
-    constexpr int ITER = 20;
+    constexpr int ITER = 100;
     clock_t beg = clock();
     for (int i = 0; i < ITER; i++) {
         clock_t beg = clock();
@@ -29,13 +29,15 @@ int32_t main() {
             i = rnd() >> 3;
         }
         auto c = FFT::convolve(a, b);
-        FFT::w.clear();
-        FFT::w_rb.clear();
 
         float tm = (clock() - beg) * 1.0f / CLOCKS_PER_SEC;
         min = std::min(min, tm);
         std::cout << tm << " \n"[i + 1 == ITER];
         std::cout.flush();
+
+        // FFT::free_mem();
+        // FFT::w.clear();
+        // FFT::w_rb.clear();
     }
 
     std::cout << "min time: " << min << "\n";
