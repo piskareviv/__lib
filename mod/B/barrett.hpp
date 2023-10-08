@@ -19,7 +19,6 @@ using u32x8 = u32 __attribute__((vector_size(32)));
 using u64x4 = u64 __attribute__((vector_size(32)));
 
 #define RC(type, val) reinterpret_cast<type>(val)
-#define INL inline __attribute__((always_inline))
 
 namespace simd {
     u32x4 load_u32x4(u32* ptr) {
@@ -66,9 +65,6 @@ namespace simd {
     u32x8 blend_u32x8(u32x8 a, u32x8 b) {
         return RC(u32x8, _mm256_blend_epi32(RC(i256, a), RC(i256, b), imm8));
     }
-    u32x8 blendv_u32x8(u32x8 a, u32x8 b, u32x8 mask) {
-        return RC(u32x8, _mm256_blendv_epi8(RC(i256, a), RC(i256, b), RC(i256, mask)));
-    }
 
     template <int imm8>
     u32x8 shift_left_u32x8_epi128(u32x8 val) {
@@ -104,7 +100,7 @@ struct Barrett {
 
         assert(mod < (1 << 30) && "this shit won't work");
         if (q0 & ((1ULL << 31) | (1ULL << 62))) {
-            std::cerr << "warning improper mod  (line: " << __LINE__ << ")" << std::endl;
+            std::cerr << "warning improper mod  (" << __FILE__ << ":" << __LINE__ << ")" << std::endl;
         }
         // assert(!(q0 & (1ULL << 31)));  // ! wtf
         // assert(!(q0 & (1ULL << 62)));  // ! wtf
@@ -130,25 +126,26 @@ struct Barrett {
 };
 
 struct Barrett_simd {
+    u32x8 v_q;
+    u32x8 v_mod;
     Barrett bt;
-
     u32 s;
-    u32x8 v_mod, v_q;
 
     Barrett_simd(u32 m) : bt(m) {
+        sizeof(Barrett_simd);
+
         s = bt.s;
         v_q = set1_u32x8(bt.q);
         v_mod = set1_u32x8(bt.mod);
+
+        // assert(RC(u64, &v_q) % 32 == 0);
+        // assert(RC(u64, &v_mod) % 32 == 0);
     }
 
     u32x8 shrink(u32x8 vec) {
         i256 res = _mm256_min_epu32(RC(i256, vec), _mm256_sub_epi32(RC(i256, vec), RC(i256, v_mod)));
         return RC(u32x8, res);
     }
-    // u32x8 shrink_cum(u32x8 vec) {
-    //     i256 res = _mm256_min_epu32(RC(i256, vec), _mm256_add_epi32(RC(i256, vec), RC(i256, v_mod)));
-    //     return RC(u32x8, res);
-    // }
 
     // from [0, 2 * mod^2) to [0, 2 * mod)
     u64x4 mod_22(u64x4 vec) {

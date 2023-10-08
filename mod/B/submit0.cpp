@@ -1,5 +1,3 @@
-#pragma GCC optimize("O3")
-
 #include <cassert>
 #include <iostream>
 
@@ -16,16 +14,8 @@ int32_t main() {
 
     int f;
 
-    // u32 *a = (u32 *)std::aligned_alloc(64, (4 << 20));
-    // u32 *b = (u32 *)std::aligned_alloc(64, (4 << 20));
-    u32 *a = (u32 *)malloc((4 << 20) + 256);
-    u32 *b = (u32 *)malloc((4 << 20) + 256);
-    while (RC(u64, a) & 63) {
-        a++;
-    }
-    while (RC(u64, b) & 63) {
-        b++;
-    }
+    u32 *a = (u32 *)std::aligned_alloc(64, (4 << 20));
+    u32 *b = (u32 *)std::aligned_alloc(64, (4 << 20));
 
     for (int i = 0; i < n; i++) {
         // qin >> a[i];
@@ -36,13 +26,14 @@ int32_t main() {
     }
     memset(b + m, 0, (4 << 20) - 4 * m);
 
-    // for (int i = 0; i < 100; i++) {
     FFT::convolve(n + m - 1, a, b);
-    // }
 
     for (int i = 0; i < (n + m - 1); i++) {
         // qout << a[i] << " \n"[i + 1 == (n + m - 1)];
     }
+
+    std::free(a);
+    std::free(b);
 
     return 0;
 }
