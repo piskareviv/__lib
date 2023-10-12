@@ -14,19 +14,19 @@ int32_t main() {
     n = m = 5e5;
     // qin >> n >> m;
 
-    int f;
+    int lg = std::__lg(std::max(1, n + m - 2)) + 1;
 
-    u32 *a = (u32 *)new u32x8[std::max(1, (1 << 20) / 8)];
-    u32 *b = (u32 *)new u32x8[std::max(1, (1 << 20) / 8)];
+    u32 *a = (u32 *)_mm_malloc(std::max(32, (1 << lg) * 4), 32);
+    u32 *b = (u32 *)_mm_malloc(std::max(32, (1 << lg) * 4), 32);
 
     for (int i = 0; i < n; i++) {
         // qin >> a[i];
     }
-    memset(a + n, 0, (4 << 20) - 4 * n);
+    memset(a + n, 0, (4 << lg) - 4 * n);
     for (int i = 0; i < m; i++) {
         // qin >> b[i];
     }
-    memset(b + m, 0, (4 << 20) - 4 * m);
+    memset(b + m, 0, (4 << lg) - 4 * m);
 
     for (int i = 0; i < 100; i++)
         fft.convolve(n + m - 1, a, b);

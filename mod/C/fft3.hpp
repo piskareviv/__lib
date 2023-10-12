@@ -33,8 +33,9 @@ struct FFT {
         g = mt.mul<true>(mt.r2, find_pr_root(mod));
     }
 
-    [[gnu::noinline]] std::vector<u32> make_cum(int lg, bool inv = false) const {
+    [[gnu::noinline]] std::pair<std::vector<u32>, u32x8 *> make_cum(int lg, bool inv = false) const {
         lg -= 2;
+
         const auto mt = this->mt;  // ! to put Montgomery constants in registers
         std::vector<u32> w_cum(lg);
         for (int i = 0; i < lg; i++) {
@@ -45,14 +46,26 @@ struct FFT {
             u32 res = mt.mul<true>(f, power(power(f, (1 << i + 1) - 2), mod - 2));
             w_cum[i] = res;
         }
-        return w_cum;
+        u32x8 *w_cum_x8 = (u32x8 *)_mm_malloc(32 * lg, 32);
+
+        for (int i = 0; i < lg; i++) {
+            u32 f = power(g, (mod - 1) >> i + 4);
+            if (inv) {
+                f = power(f, mod - 2);
+            }
+            f = mt.mul<true>(f, power(power(f, (1 << i + 1) - 2), mod - 2));
+            w_cum_x8[i][0] = mt.r;
+            for (int j = 1; j < 8; j++) {
+                w_cum_x8[i][j] = mt.mul<true>(w_cum_x8[i][j - 1], f);
+            }
+        }
+        return {w_cum, w_cum_x8};
     }
 
     // input data[i] in [0, 4 * mod)
     // output data[i] in [0, 4 * mod)
     [[gnu::noinline]] __attribute__((optimize("O3"))) void fft(int lg, u32 *data) const {
-        auto w_cum = make_cum(lg, false);
-
+        auto [w_cum, w_cum_x8] = make_cum(lg, false);
         const auto mt = this->mt;    // ! to put Montgomery constants in registers
         const auto mts = this->mts;  // ! to put Montgomery constants in registers
 
@@ -103,80 +116,41 @@ struct FFT {
 
         assert(k == 3);
 
-        {
-            u32x8 *w_cum2_x8 = (u32x8 *)_mm_malloc(32 * lg, 32);
-            for (int i = 0; i < lg - 2; i++) {
-                u32 f = power(g, (mod - 1) >> i + 4);
-                f = mt.mul<true>(f, power(power(f, (1 << i + 1) - 2), mod - 2));
-                u32 f1 = f;
-                u32 f2 = mt.mul<true>(f1, f1);
-                u32 f4 = mt.mul<true>(f2, f2);
-                w_cum2_x8[i] = setr_u32x8(f, f2, f, f4, f, f2, f, f4);
-            }
+        std::array<u32, 4> w;
+        w[0] = mt.r;
+        w[1] = power(g, (mod - 1) / 4);
+        w[2] = power(g, (mod - 1) / 8);
+        w[3] = mt.mul<true>(w[1], w[2]);
 
-            std::array<u32, 4> w;
-            w[0] = mt.r;
-            w[1] = power(g, (mod - 1) / 4);
-            w[2] = power(g, (mod - 1) / 8);
-            w[3] = mt.mul<true>(w[1], w[2]);
+        u32x8 cum0 = setr_u32x8(w[0], w[0], w[0], w[0], w[0], w[0], w[1], w[1]);
+        u32x8 cum1 = setr_u32x8(w[0], w[0], w[0], w[1], w[0], w[2], w[0], w[3]);
+        u32x8 cum = set1_u32x8(mt.r);
+        for (int i = 0; i < n; i += 8) {
+            u32x8 vec = load_u32x8(data + i);
 
-            // *  { w, w^2, w * w_1, w^4,  |  w * w_2, w^2 * w_1, w * w_3, w^4 }
-            u32x8 cum = setr_u32x8(w[0], w[0], w[1], w[0], w[2], w[1], w[3], w[0]);
+            vec = mts.mul(vec, cum);
+            vec = mts.mul(blend_u32x8<0b11'11'00'00>(vec, mts.mod2 - vec) + permute_u32x8_epi128<1>(vec, vec), cum0);
+            vec = mts.mul(blend_u32x8<0b11'00'11'00>(vec, mts.mod2 - vec) + shuffle_u32x8<0b01'00'11'10>(vec), cum1);
+            vec = blend_u32x8<0b10'10'10'10>(vec, mts.mod2 - vec) + shuffle_u32x8<0b10'11'00'01>(vec);
 
-            int n_8 = n / 8;
+            store_u32x8(data + i, vec);
 
-            for (int i = 0; i < n_8; i++) {
-                u32x8 vec = load_u32x8(data + i * 8);
-
-                u32x8 wj0 = shuffle_u32x8<0b11'11'11'11>(cum);
-                u32x8 wj1 = shuffle_u32x8<0b01'01'01'01>(cum);
-                u32x8 wj2 = cum;  // no shuffle needed
-
-                u32x8 bw;
-
-                vec = mts.shrink2(vec);
-                bw = permute_u32x8((u32x8)mts.mul_to_hi((u64x4)wj0, (u64x4)permute_u32x8(vec, setr_u32x8(4, -1, 5, -1, 6, -1, 7, -1))), setr_u32x8(1, 3, 5, 7, 1, 3, 5, 7));
-                vec = permute_u32x8_epi128<0>(vec, vec) + blend_u32x8<0b11'11'00'00>(bw, mts.mod2 - bw);
-
-                vec = mts.shrink2(vec);
-                bw = shuffle_u32x8<0b11'01'11'01>((u32x8)mts.mul_to_hi((u64x4)wj1, (u64x4)shuffle_u32x8<0b00'11'00'10>(vec)));
-                vec = shuffle_u32x8<0b01'00'01'00>(vec) + blend_u32x8<0b11'00'11'00>(bw, mts.mod2 - bw);
-
-                vec = mts.shrink2(vec);
-                bw = shuffle_u32x8<0b11'11'01'01>((u32x8)mts.mul_to_hi((u64x4)wj2, (u64x4)shuffle_u32x8<0b00'11'00'01>(vec)));
-                vec = shuffle_u32x8<0b10'10'00'00>(vec) + blend_u32x8<0b10'10'10'10>(bw, mts.mod2 - bw);
-
-                store_u32x8(data + i * 8, vec);
-
-                cum = mts.mul(cum, w_cum2_x8[__builtin_ctz(~i)]);
-            }
-
-            _mm_free(w_cum2_x8);
+            cum = mts.mul<true>(cum, w_cum_x8[__builtin_ctz(~(i >> 3))]);
         }
+
+        _mm_free(w_cum_x8);
     }
 
-    // input data[i] in [0, 2 * mod)
+    // input data[i] in [0, 4 * mod)
     // output data[i] in [0, mod)
-    [[gnu::noinline]] __attribute__((optimize("O3"))) void
-    ifft(int lg, u32 *data) const {
-        auto w_cum = make_cum(lg, true);
+    [[gnu::noinline]] __attribute__((optimize("O3"))) void ifft(int lg, u32 *data) const {
+        auto [w_cum, w_cum_x8] = make_cum(lg, true);
         const auto mt = this->mt;    // ! to put Montgomery constants in registers
         const auto mts = this->mts;  // ! to put Montgomery constants in registers
 
         int n = 1 << lg;
         int k = 1;
         {
-            u32x8 *w_cum_x8 = (u32x8 *)_mm_malloc(32 * lg, 32);
-            for (int i = 0; i < lg - 2; i++) {
-                u32 f = power(g, (mod - 1) >> i + 4);
-                f = power(f, mod - 2);
-                f = mt.mul<true>(f, power(power(f, (1 << i + 1) - 2), mod - 2));
-                w_cum_x8[i][0] = mt.r;
-                for (int j = 1; j < 8; j++) {
-                    w_cum_x8[i][j] = mt.mul<true>(w_cum_x8[i][j - 1], f);
-                }
-            }
-
             std::array<u32, 4> w;
             w[0] = mt.r;
             w[1] = power(power(g, mod - 2), (mod - 1) / 4);
@@ -189,19 +163,20 @@ struct FFT {
             u32 rv = mt.mul<true>(mt.r2, power(mt.mul<true>(mt.r2, 1 << lg), mod - 2));
             u32x8 cum = set1_u32x8(rv);
 
-            int n_8 = n / 8;
-            for (int i = 0; i < n_8; i++) {
-                u32x8 vec = load_u32x8(data + i * 8);
+            for (int i = 0; i < n; i += 8) {
+                u32x8 vec = load_u32x8(data + i);
 
                 vec = mts.mul(cum1, blend_u32x8<0b10'10'10'10>(vec, mts.mod2 - vec) + shuffle_u32x8<0b10'11'00'01>(vec));
                 vec = mts.mul(cum0, blend_u32x8<0b11'00'11'00>(vec, mts.mod2 - vec) + shuffle_u32x8<0b01'00'11'10>(vec));
                 vec = mts.mul(cum, blend_u32x8<0b11'11'00'00>(vec, mts.mod2 - vec) + permute_u32x8_epi128<1>(vec, vec));
 
-                store_u32x8(data + i * 8, vec);
+                store_u32x8(data + i, vec);
 
-                cum = mts.mul<true>(cum, w_cum_x8[__builtin_ctz(~i)]);
+                cum = mts.mul<true>(cum, w_cum_x8[__builtin_ctz(~(i >> 3))]);
             }
+
             _mm_free(w_cum_x8);
+
             k += 3;
         }
 

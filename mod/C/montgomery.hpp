@@ -94,11 +94,12 @@ struct Montgomery {
     u32 mod2;   // 2 * mod
     u32 n_inv;  // n_inv * mod == -1 (mod 2^32)
     u32 r;      // 2^32 % mod
-    u32 r2;     // (2 ^ 32) ^ 2 % mod
+    u32 r2;     // (2^32) ^ 2 % mod
 
     Montgomery() = default;
     Montgomery(u32 mod) : mod(mod) {
         assert(mod % 2);
+        assert(mod < (1 << 30));
         n_inv = 1;
         for (int i = 0; i < 5; i++) {
             n_inv *= 2u + n_inv * mod;
@@ -110,23 +111,23 @@ struct Montgomery {
         r2 = r * u64(r) % mod;
     }
 
-    u32 shrink(u32 val) {
+    u32 shrink(u32 val) const {
         return std::min(val, val - mod);
     }
-    u32 shrink2(u32 val) {
+    u32 shrink2(u32 val) const {
         return std::min(val, val - mod2);
     }
-    u32 shrink_n(u32 val) {
+    u32 shrink_n(u32 val) const {
         return std::min(val, val + mod);
     }
-    u32 shrink2_n(u32 val) {
+    u32 shrink2_n(u32 val) const {
         return std::min(val, val + mod2);
     }
 
     // a * b should be in [0, 2**32 * mod)
     // result in [0, 2 * mod)
     template <bool strict = false>
-    u32 mul(u32 a, u32 b) {
+    u32 mul(u32 a, u32 b) const {
         u64 val = u64(a) * b;
         u32 res = (val + u32(val) * n_inv * u64(mod)) >> 32;
         if constexpr (strict)
@@ -141,7 +142,7 @@ struct Montgomery_simd {
     u32x8 mod2;   // 2 * mod
     u32x8 n_inv;  // n_inv * mod == -1 (mod 2^32)
     u32x8 r;      // 2^32 % mod
-    u32x8 r2;     // (2 ^ 32) ^ 2 % mod
+    u32x8 r2;     // (2^32) ^ 2 % mod
 
     Montgomery_simd() = default;
     Montgomery_simd(u32 md) {
@@ -153,23 +154,24 @@ struct Montgomery_simd {
         r2 = set1_u32x8(mt.r2);
     }
 
-    u32x8 shrink(u32x8 val) {
+    u32x8 shrink(u32x8 val) const {
         return min_u32x8(val, val - mod);
     }
-    u32x8 shrink2(u32x8 val) {
+    u32x8 shrink2(u32x8 val) const {
         return min_u32x8(val, val - mod2);
     }
-    u32x8 shrink_n(u32x8 val) {
+    u32x8 shrink_n(u32x8 val) const {
         return min_u32x8(val, val + mod);
     }
-    u32x8 shrink2_n(u32x8 val) {
+    u32x8 shrink2_n(u32x8 val) const {
         return min_u32x8(val, val + mod2);
     }
 
     // a * b should be in [0, 2**32 * mod)
-    // result in [0, 2 * mod)
+    // result in [0, 2 * mod)   <false>
+    // result in [0, mod)       <true>
     template <bool strict = false>
-    u32x8 mul(u32x8 a, u32x8 b) {
+    u32x8 mul(u32x8 a, u32x8 b) const {
         u32x8 x0246 = mul64_u32x8(a, b);
         u32x8 x1357 = mul64_u32x8(shift_right_u32x8_epi128<4>(a), shift_right_u32x8_epi128<4>(b));
         u32x8 x0246_ninv = mul64_u32x8(x0246, n_inv);
@@ -179,5 +181,19 @@ struct Montgomery_simd {
         if constexpr (strict)
             res = shrink(res);
         return res;
+    }
+
+    // a * b should be in [0, 2**32 * mod)
+    // puts result in high 32-bit of each 64-bit word
+    // result in [0, 2 * mod)   <false>
+    // result in [0, mod)       <true>
+    template <bool strict = false>
+    u64x4 mul_to_hi(u64x4 a, u64x4 b) const {
+        u32x8 val = mul64_u32x8((u32x8)a, (u32x8)b);
+        u32x8 val_ninv = mul64_u32x8(val, n_inv);
+        u32x8 res = u32x8(u64x4(val) + u64x4(mul64_u32x8(val_ninv, mod)));
+        if constexpr (strict)
+            res = shrink(res);
+        return (u64x4)res;
     }
 };
