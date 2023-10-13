@@ -29,8 +29,10 @@ int32_t main() {
     memset(b + m, 0, (4 << lg) - 4 * m);
 
     for (int i = 0; i < 100; i++)
-        fft.convolve(n + m - 1, a, b);
-
+    //
+    {
+        fft.convolve(lg, a, b);
+    }
     for (int i = 0; i < (n + m - 1); i++) {
         // qout << a[i] << " \n"[i + 1 == (n + m - 1)];
     }

@@ -13,7 +13,7 @@ int32_t main() {
     std::mt19937 rnd;
     std::mt19937_64 rnd_64;
 
-    FFT fft;
+    FFT fft;  //((1 << 16) + 1);
 
     auto test = [&](std::vector<u32> a, std::vector<u32> b) {
         auto c = fft.convolve(a, b);

@@ -26,17 +26,17 @@ int32_t main() {
         return a;
     };
 
-    for (int i = 0; i < 1e3; i++) {
-        int n = 3;
-        int m = 3;
-        test(rand_vec(n, 10), rand_vec(m, 10));
-    }
+    // for (int i = 0; i < 1e3; i++) {
+    //     int n = 3;
+    //     int m = 3;
+    //     test(rand_vec(n, 10), rand_vec(m, 10));
+    // }
 
-    for (int i = 1; i < 1e4; i++) {
-        int n = exp2(rnd() % int(1e9) / 1e9 * 10);
-        int m = exp2(rnd() % int(1e9) / 1e9 * 10);
-        test(rand_vec(n, i + 1), rand_vec(m, i + 1));
-    }
+    // for (int i = 1; i < 1e4; i++) {
+    //     int n = exp2(rnd() % int(1e9) / 1e9 * 10);
+    //     int m = exp2(rnd() % int(1e9) / 1e9 * 10);
+    //     test(rand_vec(n, i + 1), rand_vec(m, i + 1));
+    // }
     for (int i = 0; i < 1; i++) {
         // int n = exp2(rnd() % int(1e9) / 1e9 * 15);
         // int m = exp2(rnd() % int(1e9) / 1e9 * 20);

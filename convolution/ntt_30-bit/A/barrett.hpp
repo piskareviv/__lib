@@ -1,4 +1,5 @@
 #pragma GCC target("avx2")
+#pragma GCC target("bmi")
 #include <immintrin.h>
 #include <stdint.h>
 
@@ -61,6 +62,22 @@ namespace simd {
         return RC(u32x8, _mm256_blendv_epi8(RC(i256, a), RC(i256, b), RC(i256, mask)));
     }
 
+    template <int imm8>
+    u32x8 shift_left_u32x8_epi128(u32x8 val) {
+        return RC(u32x8, _mm256_bslli_epi128(RC(i256, val), imm8));
+    }
+    template <int imm8>
+    u32x8 shift_right_u32x8_epi128(u32x8 val) {
+        return RC(u32x8, _mm256_bsrli_epi128(RC(i256, val), imm8));
+    }
+
+    u32x8 shift_left_u32x8_epi64(u32x8 val, int imm8) {
+        return RC(u32x8, _mm256_slli_epi64(RC(i256, val), imm8));
+    }
+    u32x8 shift_right_u32x8_epi64(u32x8 val, int imm8) {
+        return RC(u32x8, _mm256_srli_epi64(RC(i256, val), imm8));
+    }
+
 };  // namespace simd
 
 using namespace simd;
@@ -109,13 +126,13 @@ struct Barrett {
         return res;
     }
 
-    // from [0, 2 * mod * mod) to [0, mod)
-    // should work for every mod
-    u32 mod_21(u64 val) {
-        u32 res = mod_22(val);
-        res -= mod * (res >= mod) + mod * (res >= mod2);
-        return res;
-    }
+    // // // from [0, 2 * mod * mod) to [0, mod)
+    // // // should work for every mod
+    // // u32 mod_21(u64 val) {
+    // //     u32 res = mod_22(val);
+    // //     res -= mod * (res >= mod) + mod * (res >= mod2);
+    // //     return res;
+    // // }
 
     // from [0, 4 * mod * mod) to [0, 4 * mod)
     u32 mod_44(u64 val) {
@@ -129,6 +146,11 @@ struct Barrett {
         u32 res = mod_44(val);
         res = shrink_2(res);
         return res;
+    }
+
+    // product in [0, 2 * mod * mod), result in [0, mod)
+    u32 mul_mod_21(u32 a, u32 b) {
+        return shrink(mod_22(u64(a) * b));
     }
 };
 
@@ -163,15 +185,15 @@ struct Barrett_simd {
 
     // from [0, 2 * mod * mod) to [0, 2 * mod)
     u64x4 mod_22(u64x4 vec) {
-        i256 a = _mm256_srli_epi64(_mm256_mul_epu32(_mm256_srli_epi64(RC(i256, vec), s), RC(i256, v_q)), 32);
+        i256 a = _mm256_bsrli_epi128(_mm256_mul_epu32(_mm256_srli_epi64(RC(i256, vec), s), RC(i256, v_q)), 4);
         i256 res = _mm256_sub_epi64(RC(i256, vec), _mm256_mul_epu32(a, RC(i256, v_mod)));
         return RC(u64x4, res);
     }
 
     // from [0, 4 * mod * mod) to [0, 4 * mod)
     u64x4 mod_44(u64x4 vec) {
-        i256 a = _mm256_srli_epi64(_mm256_mul_epu32(_mm256_srli_epi64(RC(i256, vec), s_1), RC(i256, v_q)), 32);
-        i256 res = _mm256_sub_epi64(RC(i256, vec), _mm256_mul_epu32(a, RC(i256, v_mod2)));
+        i256 a = _mm256_bsrli_epi128(_mm256_mul_epu32(_mm256_srli_epi64(RC(i256, vec), s_1), RC(i256, v_q)), 4);
+        i256 res = _mm256_sub_epi32(RC(i256, vec), _mm256_mul_epu32(a, RC(i256, v_mod2)));
         return RC(u64x4, res);
     }
 
@@ -184,24 +206,22 @@ struct Barrett_simd {
 
     // product in [0, 4 * mod * mod), result in [0, 2 * mod)
     u32x8 mul_mod_42(u32x8 a, u32x8 b) {
-        const u32 shuflle_mask = 0b10'11'00'01;
         i256 x0246 = _mm256_mul_epu32(RC(i256, a), RC(i256, b));
-        i256 x1357 = _mm256_mul_epu32(_mm256_shuffle_epi32(RC(i256, a), shuflle_mask), _mm256_shuffle_epi32(RC(i256, b), shuflle_mask));
+        i256 x1357 = _mm256_mul_epu32(_mm256_bsrli_epi128(RC(i256, a), 4), _mm256_bsrli_epi128(RC(i256, b), 4));
         x0246 = RC(i256, mod_44(RC(u64x4, x0246)));
         x1357 = RC(i256, mod_44(RC(u64x4, x1357)));
-        i256 res = _mm256_blend_epi32(x0246, _mm256_shuffle_epi32(x1357, shuflle_mask), 0b10'10'10'10);
+        i256 res = _mm256_blend_epi32(x0246, _mm256_bslli_epi128(x1357, 4), 0b10'10'10'10);
         res = _mm256_min_epu32(res, _mm256_sub_epi32(res, RC(i256, v_mod2)));
         return RC(u32x8, res);
     }
 
     // product in [0, 2 * mod * mod), result in [0, 2 * mod)
     u32x8 mul_mod_22(u32x8 a, u32x8 b) {
-        const u32 shuflle_mask = 0b10'11'00'01;
         i256 x0246 = _mm256_mul_epu32(RC(i256, a), RC(i256, b));
-        i256 x1357 = _mm256_mul_epu32(_mm256_shuffle_epi32(RC(i256, a), shuflle_mask), _mm256_shuffle_epi32(RC(i256, b), shuflle_mask));
+        i256 x1357 = _mm256_mul_epu32(_mm256_bsrli_epi128(RC(i256, a), 4), _mm256_bsrli_epi128(RC(i256, b), 4));
         x0246 = RC(i256, mod_22(RC(u64x4, x0246)));
         x1357 = RC(i256, mod_22(RC(u64x4, x1357)));
-        i256 res = _mm256_blend_epi32(x0246, _mm256_shuffle_epi32(x1357, shuflle_mask), 0b10'10'10'10);
+        i256 res = _mm256_blend_epi32(x0246, _mm256_bslli_epi128(x1357, 4), 0b10'10'10'10);
         return RC(u32x8, res);
     }
 

@@ -7,9 +7,11 @@
 
 #include "barrett.hpp"
 
+// #define INL
+
 namespace FFT {
-    constexpr u32 mod = 998'244'353;
-    constexpr u32 pr_root = 3;
+    const u32 mod = 998'244'353;
+    const u32 pr_root = 3;
 
     Barrett bt(mod);
     Barrett_simd bts(mod);
@@ -26,7 +28,9 @@ namespace FFT {
         return res;
     }
 
-    std::vector<u32 *> w, w_rb;
+    std::vector<u32 *> w;
+    u32 *w_rb = nullptr;
+    size_t w_rb_sz;
 
     void expand_w(int k) {
         while (w.size() < k) {
@@ -57,29 +61,64 @@ namespace FFT {
     }
 
     void expand_w_rb(int k) {
-        while (w_rb.size() < k) {
-            int r = w_rb.size();
-            w_rb.push_back((u32 *)aligned_alloc(64, std::max<int>(64, 4 << r)));
-
-            if (r == 0) {
-                w_rb.back()[0] = 1;
-            } else {
+        if (w_rb_sz < (1 << k - 1)) {
+            if (w_rb != nullptr) {
+                free(w_rb);
+            }
+            w_rb_sz = 1 << k - 1;
+            w_rb = (u32 *)std::aligned_alloc(64, std::max(64, 4 << k - 1));
+            w_rb[0] = 1;
+            for (int r = 1; r < k; r++) {
                 u32 f = power(pr_root, (mod - 1) >> r + 1);
                 if (r <= 3) {
                     for (int j = 0; j < (1 << r - 1); j++) {
-                        w_rb[r][j] = w_rb[r - 1][j];
-                        w_rb[r][j + (1 << r - 1)] = bt.shrink(bt.mod_22(u64(f) * w_rb[r - 1][j]));
+                        w_rb[j + (1 << r - 1)] = bt.shrink(bt.mod_22(u64(f) * w_rb[j]));
                     }
                 } else {
                     u32x8 ff = set1_u32x8(f);
                     for (int j = 0; j < (1 << r - 1); j += 8) {
-                        u32x8 val = load_u32x8(w_rb[r - 1] + j);
-                        u32x8 val2 = bts.shrink(bts.mul_mod_22(val, ff));
-                        store_u32x8(w_rb[r] + j, val);
-                        store_u32x8(w_rb[r] + (1 << r - 1) + j, val2);
+                        u32x8 val = load_u32x8(w_rb + j);
+                        val = bts.shrink(bts.mul_mod_22(val, ff));
+                        store_u32x8(w_rb + (1 << r - 1) + j, val);
                     }
                 }
             }
+        }
+
+        // while (w_rb.size() < k) {
+        //     int r = w_rb.size();
+        //     w_rb.push_back((u32 *)aligned_alloc(64, std::max<int>(64, 4 << r)));
+        //
+        //     if (r == 0) {
+        //         w_rb.back()[0] = 1;
+        //     } else {
+        //         u32 f = power(pr_root, (mod - 1) >> r + 1);
+        //         if (r <= 3) {
+        //             for (int j = 0; j < (1 << r - 1); j++) {
+        //                 w_rb[r][j] = w_rb[r - 1][j];
+        //                 w_rb[r][j + (1 << r - 1)] = bt.shrink(bt.mod_22(u64(f) * w_rb[r - 1][j]));
+        //             }
+        //         } else {
+        //             u32x8 ff = set1_u32x8(f);
+        //             for (int j = 0; j < (1 << r - 1); j += 8) {
+        //                 u32x8 val = load_u32x8(w_rb[r - 1] + j);
+        //                 u32x8 val2 = bts.shrink(bts.mul_mod_22(val, ff));
+        //                 store_u32x8(w_rb[r] + j, val);
+        //                 store_u32x8(w_rb[r] + (1 << r - 1) + j, val2);
+        //             }
+        //         }
+        //     }
+        // }
+    }
+
+    std::vector<u32> w_cum;
+
+    void expand_cum(int k) {
+        while (w_cum.size() < k) {
+            int r = w_cum.size();
+            u32 f = power(pr_root, (mod - 1) >> r + 2);
+            u32 res = power(f, mod - (1 << r));
+            w_cum.push_back(res);
         }
     }
 
@@ -160,25 +199,16 @@ namespace FFT {
         butterfly_u32x8_x4(d1, d3, d5, d7, wj1, wj_1, wj_3, ap1, ap3, ap5, ap7);
     }
 
-    // template <int lg, std::array ar>
-    // void t_fft(u32 *data) {
-    //     static_assert(std::accumulate(ar.begin(), ar.end(), 0) == lg);
-    // }
-
     // input data[i] in [0, 4 * mod)
     // result data[i] in [0, 4 * mod)
     void fft(int lg, u32 *data) {
-        expand_w_rb(lg);
         int n = 1 << lg;
-
-        // if (lg == 20) {
-        //     t_fft<20, std::array<int, 9>{4, 2, 2, 2, 2, 2, 2, 2, 2}>(data);
-        // }
+        expand_w_rb(lg);
 
         if (lg <= 5) {
             for (int k = lg - 1; k >= 0; k--) {
                 for (int i = 0; i < n; i += (1 << k + 1)) {
-                    u32 wj = w_rb[lg - k - 1][i >> k + 1];
+                    u32 wj = w_rb[i >> k + 1];
                     for (int j = 0; j < (1 << k); j++) {
                         u32 a = data[i + j], b = data[i + (1 << k) + j];
                         butterfly_u32_x2(a, b, wj, data + i + j, data + i + (1 << k) + j);
@@ -186,25 +216,36 @@ namespace FFT {
                 }
             }
         } else {
+            expand_cum(lg + 1);
+            constexpr int B = 4;  // B should be either 2 or 4
             int k = lg - 1;
+            assert(k > B);
             for (; k % 2; k--) {
+                // for (; k > 4; k--) {
+                u32 f = 1;
                 for (int i = 0; i < n; i += (1 << k + 1)) {
-                    u32x8 wj = set1_u32x8(w_rb[lg - k - 1][i >> k + 1]);
+                    u32x8 wj = set1_u32x8(w_rb[i >> k + 1]);
+                    // u32x8 wj = set1_u32x8(f);
                     for (int j = 0; j < (1 << k); j += 8) {
                         u32x8 a = load_u32x8(data + i + j), b = load_u32x8(data + i + (1 << k) + j);
                         butterfly_u32x8_x2(a, b, wj, data + i + j, data + i + (1 << k) + j);
                     }
+                    // f = bt.mul_mod_21(f, w_cum[__builtin_ctz(~(i >> k + 1))]);
                 }
             }
             assert(k % 2 == 0);
 
-            constexpr int B = 4;  // B should be either 2 or 4
-
             for (; k > B; k -= 2) {
+                u32 f = 1;
+                u32 f1 = 1, f2 = 1;
                 for (int i = 0; i < n; i += (1 << k + 1)) {
-                    u32x8 wj = set1_u32x8(w_rb[lg - k - 1][i >> k + 1]);
-                    u32x8 wj1 = set1_u32x8(w_rb[lg - k][i >> k]);
-                    u32x8 wj2 = set1_u32x8(w_rb[lg - k][(i >> k) + 1]);
+                    u32x8 wj = set1_u32x8(w_rb[i >> k + 1]);
+                    u32x8 wj1 = set1_u32x8(w_rb[i >> k]);
+                    u32x8 wj2 = set1_u32x8(w_rb[(i >> k) + 1]);
+                    // assert(wj[0] == wj1[0]);
+                    // u32x8 wj = set1_u32x8(f);
+                    // u32x8 wj1 = set1_u32x8(f1);
+                    // u32x8 wj2 = set1_u32x8(f2);
                     for (int j = 0; j < (1 << k - 1); j += 8) {
                         u32x8 a = load_u32x8(data + i + 0 * (1 << k - 1) + j);
                         u32x8 b = load_u32x8(data + i + 1 * (1 << k - 1) + j);
@@ -217,57 +258,48 @@ namespace FFT {
                                            data + i + 1 * (1 << k - 1) + j,
                                            data + i + 3 * (1 << k - 1) + j);
                     }
+                    // !
+                    // f = bt.mul_mod_21(f, w_cum[__builtin_ctz(~(i >> k + 1))]);
                 }
             }
 
-            // for (; k >= 0; k--) {
-            //     for (int i = 0; i < n; i += (1 << k + 1)) {
-            //         u32 wj = w_rb[lg - k - 1][i >> k + 1];
-            //         for (int j = 0; j < (1 << k); j++) {
-            //             u32 a = data[i + j], b = data[i + (1 << k) + j];
-            //             butterfly_u32_x2(a, b, wj, data + i + j, data + i + (1 << k) + j);
-            //         }
-            //     }
-            // }
-            // return;
+            auto cum = [&](u32x8 val, int i) {
+                u64x4 wj0 = set1_u64x4(w_rb[i >> 3]);
+                u64x4 wj1 = RC(u64x4, _mm256_setr_epi64x(w_rb[i >> 2], w_rb[i >> 2], w_rb[i + 4 >> 2], w_rb[i + 4 >> 2]));
+                u64x4 wj2 = RC(u64x4, _mm256_setr_epi64x(w_rb[i >> 1], w_rb[i + 2 >> 1], w_rb[i + 4 >> 1], w_rb[i + 6 >> 1]));
+                {
+                    val = bts.shrink_2(val);
+
+                    u64x4 x4567 = RC(u64x4, _mm256_permutevar8x32_epi32(RC(i256, val), _mm256_setr_epi32(4, -1, 5, -1, 6, -1, 7, -1)));
+                    u32x8 c = RC(u32x8, _mm256_permutevar8x32_epi32(RC(i256, bts.mul_mod_42(x4567, wj0)), _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6)));
+
+                    u32x8 sm = val + c;
+                    u32x8 df = RC(u32x8, _mm256_permute2x128_si256(RC(i256, val), RC(i256, val), 0)) + bts.v_mod2 - c;
+                    val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'11'00'00));
+                }
+                {
+                    val = bts.shrink_2(val);
+                    u64x4 x2367 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'10));
+                    u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x2367, wj1)), 0b10'00'10'00));
+                    u32x8 sm = val + c;
+                    u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 8)) + bts.v_mod2 - c;
+                    val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'00'11'00));
+                }
+                {
+                    val = bts.shrink_2(val);
+                    u64x4 x1357 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'01));
+                    u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x1357, wj2)), 0b10'10'00'00));
+                    u32x8 sm = val + c;
+                    u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 4)) + bts.v_mod2 - c;
+                    val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b10'10'10'10));
+                }
+
+                return val;
+            };
+
             if constexpr (B == 2) {
                 assert(k == 2);
                 for (int i = 0; i < n; i += 8) {
-                    // u32x4 wj = RC(u32x4, _mm_load_si128((i128 *)(w_rb[lg - 1] + (i >> 1))));
-
-                    auto cum = [&](u32x8 val, int i) {
-                        u64x4 wj0 = set1_u64x4(w_rb[lg - 3][i >> 3]);
-                        u64x4 wj1 = RC(u64x4, _mm256_setr_epi64x(w_rb[lg - 2][i >> 2], w_rb[lg - 2][i >> 2], w_rb[lg - 2][i + 4 >> 2], w_rb[lg - 2][i + 4 >> 2]));
-                        u64x4 wj2 = RC(u64x4, _mm256_setr_epi64x(w_rb[lg - 1][i >> 1], w_rb[lg - 1][i + 2 >> 1], w_rb[lg - 1][i + 4 >> 1], w_rb[lg - 1][i + 6 >> 1]));
-                        {
-                            val = bts.shrink_2(val);
-
-                            u64x4 x4567 = RC(u64x4, _mm256_permutevar8x32_epi32(RC(i256, val), _mm256_setr_epi32(4, -1, 5, -1, 6, -1, 7, -1)));
-                            u32x8 c = RC(u32x8, _mm256_permutevar8x32_epi32(RC(i256, bts.mul_mod_42(x4567, wj0)), _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6)));
-
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_permute2x128_si256(RC(i256, val), RC(i256, val), 0)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'11'00'00));
-                        }
-                        {
-                            val = bts.shrink_2(val);
-                            u64x4 x2367 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'10));
-                            u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x2367, wj1)), 0b10'00'10'00));
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 8)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'00'11'00));
-                        }
-                        {
-                            val = bts.shrink_2(val);
-                            u64x4 x1357 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'01));
-                            u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x1357, wj2)), 0b10'10'00'00));
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 4)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b10'10'10'10));
-                        }
-
-                        return val;
-                    };
                     u32x8 a = load_u32x8(data + i);
                     a = cum(a, i);
                     store_u32x8(data + i, a);
@@ -275,47 +307,14 @@ namespace FFT {
             } else {
                 assert(k == 4);
                 for (int i = 0; i < n; i += 32) {
-                    auto cum = [&](u32x8 val, int i) {
-                        u64x4 wj0 = set1_u64x4(w_rb[lg - 3][i >> 3]);
-                        u64x4 wj1 = RC(u64x4, _mm256_setr_epi64x(w_rb[lg - 2][i >> 2], w_rb[lg - 2][i >> 2], w_rb[lg - 2][i + 4 >> 2], w_rb[lg - 2][i + 4 >> 2]));
-                        u64x4 wj2 = RC(u64x4, _mm256_setr_epi64x(w_rb[lg - 1][i >> 1], w_rb[lg - 1][i + 2 >> 1], w_rb[lg - 1][i + 4 >> 1], w_rb[lg - 1][i + 6 >> 1]));
-                        {
-                            val = bts.shrink_2(val);
-
-                            u64x4 x4567 = RC(u64x4, _mm256_permutevar8x32_epi32(RC(i256, val), _mm256_setr_epi32(4, -1, 5, -1, 6, -1, 7, -1)));
-                            u32x8 c = RC(u32x8, _mm256_permutevar8x32_epi32(RC(i256, bts.mul_mod_42(x4567, wj0)), _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6)));
-
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_permute2x128_si256(RC(i256, val), RC(i256, val), 0)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'11'00'00));
-                        }
-                        {
-                            val = bts.shrink_2(val);
-                            u64x4 x2367 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'10));
-                            u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x2367, wj1)), 0b10'00'10'00));
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 8)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b11'00'11'00));
-                        }
-                        {
-                            val = bts.shrink_2(val);
-                            u64x4 x1357 = RC(u64x4, _mm256_shuffle_epi32(RC(i256, val), 0b00'11'00'01));
-                            u32x8 c = RC(u32x8, _mm256_shuffle_epi32(RC(i256, bts.mul_mod_22(x1357, wj2)), 0b10'10'00'00));
-                            u32x8 sm = val + c;
-                            u32x8 df = RC(u32x8, _mm256_bslli_epi128(RC(i256, val), 4)) + bts.v_mod2 - c;
-                            val = RC(u32x8, _mm256_blend_epi32(RC(i256, sm), RC(i256, df), 0b10'10'10'10));
-                        }
-
-                        return val;
-                    };
                     u32x8 a0 = load_u32x8(data + i + 0 * 8);
                     u32x8 a1 = load_u32x8(data + i + 1 * 8);
                     u32x8 a2 = load_u32x8(data + i + 2 * 8);
                     u32x8 a3 = load_u32x8(data + i + 3 * 8);
 
-                    u32x8 wj = set1_u32x8(w_rb[lg - 4 - 1][i >> 4 + 1]);
-                    u32x8 wj1 = set1_u32x8(w_rb[lg - 4][i >> 4]);
-                    u32x8 wj2 = set1_u32x8(w_rb[lg - 4][(i >> 4) + 1]);
+                    u32x8 wj = set1_u32x8(w_rb[i >> 4 + 1]);
+                    u32x8 wj1 = set1_u32x8(w_rb[i >> 4]);
+                    u32x8 wj2 = set1_u32x8(w_rb[(i >> 4) + 1]);
 
                     auto [b0, b2, b1, b3] = butterfly_u32x8_x4(a0, a2, a1, a3, wj, wj1, wj2);
 
@@ -339,7 +338,7 @@ namespace FFT {
         expand_w(lg);
         int n = 1 << lg;
 
-        if (lg <= 5) {
+        if (lg <= 6) {
             for (int k = 0; k < lg; k++) {
                 for (int i = 0; i < n; i += (1 << k + 1)) {
                     for (int j = 0; j < (1 << k); j++) {
@@ -452,27 +451,8 @@ namespace FFT {
             }
         }
 
-        for (; k + 1 < lg; k += 2) {
-            for (int i = 0; i < n; i += (1 << k + 2)) {
-                for (int j = 0; j < (1 << k); j += 8) {
-                    u32x8 a = load_u32x8(data + i + 0 * (1 << k) + j);
-                    u32x8 b = load_u32x8(data + i + 1 * (1 << k) + j);
-                    u32x8 c = load_u32x8(data + i + 2 * (1 << k) + j);
-                    u32x8 d = load_u32x8(data + i + 3 * (1 << k) + j);
-
-                    u32x8 wj = load_u32x8(w[k] + j);
-                    u32x8 wj1 = load_u32x8(w[k + 1] + j);
-                    u32x8 wj2 = load_u32x8(w[k + 1] + (1 << k) + j);
-
-                    butterfly_u32x8_x4(a, b, c, d, wj, wj1, wj2,
-                                       data + i + 0 * (1 << k) + j,
-                                       data + i + 1 * (1 << k) + j,
-                                       data + i + 2 * (1 << k) + j,
-                                       data + i + 3 * (1 << k) + j);
-                }
-            }
-        }
-        for (; k < lg; k++) {
+        for (; k % 3 != lg % 3; k++) {
+            // for (; k < lg; k++) {
             for (int i = 0; i < n; i += (1 << k + 1)) {
                 for (int j = 0; j < (1 << k); j += 8) {
                     u32x8 a = load_u32x8(data + i + j), b = load_u32x8(data + i + (1 << k) + j);
@@ -481,11 +461,64 @@ namespace FFT {
                 }
             }
         }
+        for (; k + 2 < lg; k += 3) {
+            for (int i = 0; i < n; i += (1 << k + 3)) {
+                for (int j = 0; j < (1 << k); j += 8) {
+                    u32x8 wj = load_u32x8(w[k] + j);
+                    u32x8 wj0 = load_u32x8(w[k + 1] + j);
+                    u32x8 wj1 = load_u32x8(w[k + 1] + (1 << k) + j);
+                    u32x8 wj_0 = load_u32x8(w[k + 2] + 0 * (1 << k) + j);
+                    u32x8 wj_1 = load_u32x8(w[k + 2] + 1 * (1 << k) + j);
+                    u32x8 wj_2 = load_u32x8(w[k + 2] + 2 * (1 << k) + j);
+                    u32x8 wj_3 = load_u32x8(w[k + 2] + 3 * (1 << k) + j);
+
+                    u32x8 a0 = load_u32x8(data + i + j + 0 * (1 << k));
+                    u32x8 a1 = load_u32x8(data + i + j + 1 * (1 << k));
+                    u32x8 a2 = load_u32x8(data + i + j + 2 * (1 << k));
+                    u32x8 a3 = load_u32x8(data + i + j + 3 * (1 << k));
+                    u32x8 a4 = load_u32x8(data + i + j + 4 * (1 << k));
+                    u32x8 a5 = load_u32x8(data + i + j + 5 * (1 << k));
+                    u32x8 a6 = load_u32x8(data + i + j + 6 * (1 << k));
+                    u32x8 a7 = load_u32x8(data + i + j + 7 * (1 << k));
+
+                    butterfly_u32x8_x8(a0, a1, a2, a3, a4, a5, a6, a7,
+                                       wj, wj0, wj1, wj_0, wj_1, wj_2, wj_3,
+                                       data + i + j + 0 * (1 << k),
+                                       data + i + j + 1 * (1 << k),
+                                       data + i + j + 2 * (1 << k),
+                                       data + i + j + 3 * (1 << k),
+                                       data + i + j + 4 * (1 << k),
+                                       data + i + j + 5 * (1 << k),
+                                       data + i + j + 6 * (1 << k),
+                                       data + i + j + 7 * (1 << k));
+                }
+            }
+        }
+        // for (; k + 1 < lg; k += 2) {
+        //     for (int i = 0; i < n; i += (1 << k + 2)) {
+        //         for (int j = 0; j < (1 << k); j += 8) {
+        //             u32x8 wj = load_u32x8(w[k] + j);
+        //             u32x8 wj1 = load_u32x8(w[k + 1] + j);
+        //             u32x8 wj2 = load_u32x8(w[k + 1] + (1 << k) + j);
+        //
+        //             u32x8 a = load_u32x8(data + i + 0 * (1 << k) + j);
+        //             u32x8 b = load_u32x8(data + i + 1 * (1 << k) + j);
+        //             u32x8 c = load_u32x8(data + i + 2 * (1 << k) + j);
+        //             u32x8 d = load_u32x8(data + i + 3 * (1 << k) + j);
+        //
+        //             butterfly_u32x8_x4(a, b, c, d, wj, wj1, wj2,
+        //                                data + i + 0 * (1 << k) + j,
+        //                                data + i + 1 * (1 << k) + j,
+        //                                data + i + 2 * (1 << k) + j,
+        //                                data + i + 3 * (1 << k) + j);
+        //         }
+        //     }
+        // }
+        assert(k == lg);
 
         std::reverse(data + 1, data + n);
         u32x8 rv = set1_u32x8(power(n, mod - 2));
         for (int i = 0; i < n; i += 8) {
-            // data[i] = bt.shrink(bt.mod_42(u64(rv) * data[i]));
             u32x8 a = load_u32x8(data + i);
             store_u32x8(data + i, bts.shrink(bts.mul_mod_42(a, rv)));
         }
@@ -498,14 +531,14 @@ namespace FFT {
         for (int i = 0; i < a.size(); i++) {
             for (int j = 0; j < b.size(); j++) {
                 // c[i + j] = (c[i + j] + u64(a[i]) * b[j]) % mod;
-                c[i + j] = bt.shrink(c[i + j] + bt.mod_21(u64(a[i]) * b[j]));
+                c[i + j] = bt.shrink(c[i + j] + bt.mul_mod_21(u64(a[i]), b[j]));
             }
         }
 
         return c;
     }
 
-    void convolve(int sz, __restrict__ u32 *a, __restrict__ u32 *b) {
+    [[gnu::noinline]] void convolve(int sz, __restrict__ u32 *a, __restrict__ u32 *b) {
         int lg = std::__lg(std::max(1, sz - 1)) + 1;
         assert(sz <= (1 << lg));
 
@@ -518,7 +551,6 @@ namespace FFT {
             }
         } else {
             for (int i = 0; i < (1 << lg); i += 8) {
-                // a[i] = bt.mod_42(u64(bt.shrink_2(a[i])) * bt.shrink_2(b[i]));
                 u32x8 ai = load_u32x8(a + i);
                 u32x8 bi = load_u32x8(b + i);
                 store_u32x8(a + i, bts.mul_mod_42(bts.shrink_2(ai), bts.shrink_2(bi)));
@@ -553,10 +585,10 @@ namespace FFT {
         }
         w.clear();
         w.shrink_to_fit();
-        for (u32 *ptr : w_rb) {
-            free(ptr);
+        if (w_rb) {
+            free(w_rb);
+            w_rb = nullptr;
+            w_rb_sz = 0;
         }
-        w_rb.clear();
-        w_rb.shrink_to_fit();
     }
 };  // namespace FFT

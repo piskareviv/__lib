@@ -12,14 +12,9 @@ using u64 = uint64_t;
 namespace simd {
     using i128 = __m128i;
     using i256 = __m256i;
-    using u32x4 = u32 __attribute__((vector_size(16)));
-    using u64x2 = u64 __attribute__((vector_size(16)));
     using u32x8 = u32 __attribute__((vector_size(32)));
     using u64x4 = u64 __attribute__((vector_size(32)));
 
-    u32x4 load_u32x4(u32* ptr) {
-        return (u32x4)(_mm_load_si128((i128*)ptr));
-    }
     u32x8 load_u32x8(u32* ptr) {
         return (u32x8)(_mm256_load_si256((i256*)ptr));
     }
@@ -42,6 +37,9 @@ namespace simd {
 
     u32x8 setr_u32x8(u32 a0, u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7) {
         return (u32x8)(_mm256_setr_epi32(a0, a1, a2, a3, a4, a5, a6, a7));
+    }
+    u64x4 setr_u64x4(u64 a0, u64 a1, u64 a2, u64 a3) {
+        return (u64x4)(_mm256_setr_epi64x(a0, a1, a2, a3));
     }
 
     template <int imm8>
@@ -125,7 +123,8 @@ struct Montgomery {
     }
 
     // a * b should be in [0, 2**32 * mod)
-    // result in [0, 2 * mod)
+    // result in [0, 2 * mod)   <false>
+    // result in [0, mod)       <true>
     template <bool strict = false>
     u32 mul(u32 a, u32 b) const {
         u64 val = u64(a) * b;
@@ -138,11 +137,11 @@ struct Montgomery {
 
 // Montgomery32
 struct Montgomery_simd {
-    u32x8 mod;
-    u32x8 mod2;   // 2 * mod
-    u32x8 n_inv;  // n_inv * mod == -1 (mod 2^32)
-    u32x8 r;      // 2^32 % mod
-    u32x8 r2;     // (2^32) ^ 2 % mod
+    alignas(32) u32x8 mod;
+    alignas(32) u32x8 mod2;   // 2 * mod
+    alignas(32) u32x8 n_inv;  // n_inv * mod == -1 (mod 2^32)
+    alignas(32) u32x8 r;      // 2^32 % mod
+    alignas(32) u32x8 r2;     // (2^32) ^ 2 % mod
 
     Montgomery_simd() = default;
     Montgomery_simd(u32 md) {
@@ -195,5 +194,13 @@ struct Montgomery_simd {
         if constexpr (strict)
             res = shrink(res);
         return (u64x4)res;
+    }
+
+    // a * b should be in [0, 2**32 * mod)
+    // result in [0, 2 * mod)   <false>
+    // result in [0, mod)       <true>
+    template <bool strict = false>
+    u64x4 mul(u64x4 a, u64x4 b) const {
+        return (u64x4)shift_right_u32x8_epi128<4>((u32x8)mul_to_hi<strict>(a, b));
     }
 };

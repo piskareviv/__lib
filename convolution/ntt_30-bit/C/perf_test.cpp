@@ -35,11 +35,8 @@ int32_t main() {
             b[i] = rnd() >> 3;
         }
 
+        int lg = std::__lg(std::max(1, n + m - 2)) + 1;
         fft.convolve(n + m - 1, a, b);
-        // fft.free_mem();
-
-        // free(a);
-        // free(b);
 
         float tm = (clock() - beg) * 1.0f / CLOCKS_PER_SEC;
         min = std::min(min, tm);
