@@ -42,7 +42,7 @@ struct Montgomery {
     }
 
     template <bool strict = false>
-    u32 reduce(u64 val) {
+    u32 reduce(u64 val) const {
         u32 ans = val + u32(val) * n_inv * u64(mod) >> 32;
         if constexpr (strict)
             ans = shrink(ans);
@@ -50,12 +50,12 @@ struct Montgomery {
     }
 
     template <bool strict = false>
-    u32 mul(u32 a, u32 b) {
+    u32 mul(u32 a, u32 b) const {
         u64 res = u64(a) * b;
         return reduce<strict>(res);
     }
 
-    [[gnu::noinline]] u32 power(u32 b, u32 e) {
+    [[gnu::noinline]] u32 power(u32 b, u32 e) const {
         b = mul(b, r2);
         u32 r = 1;
         for (; e > 0; e >>= 1) {
@@ -106,9 +106,9 @@ int sqrt(u32 val, u32 mod) {
 
     while (true) {
         u32 d = rnd() % mod;
-        // if (mt.power(mt.shrink((d * 1ULL * d) % mod + mod - val), (mod - 1) / 2) == 1) {
-        //     continue;
-        // }
+        if (mt.power(mt.shrink((d * 1ULL * d) % mod + mod - val), (mod - 1) / 2) == 1) {
+            continue;
+        }
 
         auto [x0, x1] = power_cum({d, 1}, (mod - 1) / 2);
         if (x1 != 0) {

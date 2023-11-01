@@ -7,7 +7,8 @@ with open("test.in", 'w') as f:
     print(N, file=f)
     for i in tqdm.tqdm(range(N)):
         p = nt.randprime(3, 10**9)
-        p = 998_244_353
+        if i < 2e3:
+            p = 998_244_353
         if i < 1e3:
             p = nt.randprime(2, 100)
             b = randint(0, p - 1)
