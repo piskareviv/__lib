@@ -1,0 +1,87 @@
+cum@cum:~/FUCK/LIB/convolution/ntt_30-bit/C$ 
+cum@cum:~/FUCK/LIB/convolution/ntt_30-bit/C$ ulimit -v 2000000 && cd "/home/cum/FUCK/LIB/convolution/ntt_30-bit/C/" && g++ run.cpp -o run -DLOCAL -O2 -std=c++20 && perf stat -d ./run
+
+ Performance counter stats for './run':
+
+         12,979.62 msec task-clock                       #    1.000 CPUs utilized             
+                46      context-switches                 #    3.544 /sec                      
+                 3      cpu-migrations                   #    0.231 /sec                      
+             3,157      page-faults                      #  243.228 /sec                      
+    38,847,941,556      cycles                           #    2.993 GHz                       
+    92,616,439,875      instructions                     #    2.38  insn per cycle            
+     1,775,286,622      branches                         #  136.775 M/sec                     
+           624,911      branch-misses                    #    0.04% of all branches           
+   190,404,679,170      slots                            #   14.670 G/sec                     
+    91,515,497,442      topdown-retiring                 #     47.7% Retiring                 
+     8,213,535,179      topdown-bad-spec                 #      4.3% Bad Speculation          
+     2,247,280,629      topdown-fe-bound                 #      1.2% Frontend Bound           
+    89,712,574,977      topdown-be-bound                 #     46.8% Backend Bound            
+     9,249,501,143      L1-dcache-loads                  #  712.617 M/sec                     
+     2,101,562,225      L1-dcache-load-misses            #   22.72% of all L1-dcache accesses 
+        35,929,918      LLC-loads                        #    2.768 M/sec                     
+        12,047,148      LLC-load-misses                  #   33.53% of all LL-cache accesses  
+
+      12.981043283 seconds time elapsed
+
+      12.979923000 seconds user
+       0.000000000 seconds sys
+
+
+cum@cum:~/FUCK/LIB/convolution/ntt_30-bit/C$ ulimit -v 2000000 && cd "/home/cum/FUCK/LIB/convolution/xor/A/" && g++ run.cpp -o run -DLOCAL -O2 -std=c++20 && perf stat -d ./run < test.in > fuck.out 
+
+ Performance counter stats for './run':
+
+          5,080.37 msec task-clock                       #    1.000 CPUs utilized             
+                35      context-switches                 #    6.889 /sec                      
+                 4      cpu-migrations                   #    0.787 /sec                      
+             2,557      page-faults                      #  503.310 /sec                      
+    15,205,033,715      cycles                           #    2.993 GHz                       
+    39,482,537,738      instructions                     #    2.60  insn per cycle            
+       869,436,810      branches                         #  171.136 M/sec                     
+           645,439      branch-misses                    #    0.07% of all branches           
+    75,179,707,750      slots                            #   14.798 G/sec                     
+    39,310,367,365      topdown-retiring                 #     52.2% Retiring                 
+     2,063,756,683      topdown-bad-spec                 #      2.7% Bad Speculation          
+     2,358,579,066      topdown-fe-bound                 #      3.1% Frontend Bound           
+    31,545,995,016      topdown-be-bound                 #     41.9% Backend Bound            
+     5,361,916,430      L1-dcache-loads                  #    1.055 G/sec                     
+     1,535,287,201      L1-dcache-load-misses            #   28.63% of all L1-dcache accesses 
+        52,079,182      LLC-loads                        #   10.251 M/sec                     
+         9,757,752      LLC-load-misses                  #   18.74% of all LL-cache accesses  
+
+       5.082502757 seconds time elapsed
+
+       5.076747000 seconds user
+       0.004000000 seconds sys
+
+
+cum@cum:~/FUCK/LIB/convolution/xor/A$ 
+cum@cum:~/FUCK/LIB/convolution/xor/A$ ulimit -v 2000000 && cd "/home/cum/FUCK/LIB/convolution/xor/A/" && g++ run.cpp -o run -DLOCAL -O2 -std=c++20 && perf stat -d ./run < test.in > fuck.out 
+
+ Performance counter stats for './run':
+
+          5,367.20 msec task-clock                       #    1.000 CPUs utilized             
+                18      context-switches                 #    3.354 /sec                      
+                 1      cpu-migrations                   #    0.186 /sec                      
+             2,558      page-faults                      #  476.598 /sec                      
+    16,063,968,453      cycles                           #    2.993 GHz                       
+    42,387,301,206      instructions                     #    2.64  insn per cycle            
+     1,288,397,876      branches                         #  240.050 M/sec                     
+         4,506,841      branch-misses                    #    0.35% of all branches           
+    79,857,334,640      slots                            #   14.879 G/sec                     
+    42,150,754,672      topdown-retiring                 #     52.7% Retiring                 
+     2,192,162,127      topdown-bad-spec                 #      2.7% Bad Speculation          
+     3,444,826,200      topdown-fe-bound                 #      4.3% Frontend Bound           
+    32,256,099,874      topdown-be-bound                 #     40.3% Backend Bound            
+     6,536,946,770      L1-dcache-loads                  #    1.218 G/sec                     
+     1,904,230,086      L1-dcache-load-misses            #   29.13% of all L1-dcache accesses 
+        64,333,593      LLC-loads                        #   11.986 M/sec                     
+        12,345,760      LLC-load-misses                  #   19.19% of all LL-cache accesses  
+
+       5.368031877 seconds time elapsed
+
+       5.363628000 seconds user
+       0.003999000 seconds sys
+
+
+cum@cum:~/FUCK/LIB/convolution/xor/A$ 
