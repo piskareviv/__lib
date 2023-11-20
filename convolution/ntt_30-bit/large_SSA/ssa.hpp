@@ -5,7 +5,7 @@
 #include "ntt.hpp"
 
 struct SSA {
-    // ring modulo X^(2L) + 1
+    // ring modulo X^(2^(L+1)) + 1
     struct Cum {
         u32* ptr;
         size_t sh;
