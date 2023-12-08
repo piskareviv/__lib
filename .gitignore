@@ -1,3 +1,5 @@
 tmp/
 .vscode/
 SHIT/
+perf.data
+perf.data.old
